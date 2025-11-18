@@ -1,38 +1,28 @@
 # ===================================================================
-# SCRIPT 2: UserOnce Phase - Hỏi Reboot
+# SCRIPT 2: UserOnce Phase - Hỏi Reboot (Tiếng Anh)
 # ===================================================================
 # Copy script này vào phần "UserOnce" scripts
 
 Add-Type -AssemblyName PresentationFramework
 
-# Kiểm tra xem có cần reboot không
-$FlagPath = "C:\Windows\Temp\RebootRequired.flag"
+# Hiển thị dialog hỏi user về reboot
+$Result = [System.Windows.MessageBox]::Show(
+    "Windows Update has been completed.`n`nYour computer needs to restart to finish applying updates.`n`nDo you want to restart now?",
+    "Restart Computer",
+    [System.Windows.MessageBoxButton]::YesNo,
+    [System.Windows.MessageBoxImage]::Question
+)
 
-if (Test-Path $FlagPath) {
-    # Hiển thị dialog hỏi user
-    $Result = [System.Windows.MessageBox]::Show(
-        "Windows Update đã cài đặt xong.`n`nMáy tính cần khởi động lại để hoàn tất cập nhật.`n`nBạn có muốn khởi động lại ngay bây giờ?",
-        "Khởi động lại máy tính",
-        [System.Windows.MessageBoxButton]::YesNo,
-        [System.Windows.MessageBoxImage]::Question
-    )
-    
-    # Xóa flag file
-    Remove-Item -Path $FlagPath -Force -ErrorAction SilentlyContinue
-    
-    if ($Result -eq [System.Windows.MessageBoxResult]::Yes) {
-        Write-Host "Khởi động lại máy tính..." -ForegroundColor Yellow
-        Start-Sleep -Seconds 3
-        Restart-Computer -Force
-    } else {
-        Write-Host "Bỏ qua khởi động lại. Bạn có thể restart thủ công sau." -ForegroundColor Green
-        [System.Windows.MessageBox]::Show(
-            "Bạn có thể khởi động lại máy tính sau khi hoàn tất các công việc cần thiết.",
-            "Thông báo",
-            [System.Windows.MessageBoxButton]::OK,
-            [System.Windows.MessageBoxImage]::Information
-        )
-    }
+if ($Result -eq 'Yes') {
+    Write-Host "Restarting computer..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 3
+    Restart-Computer -Force
 } else {
-    Write-Host "Không cần khởi động lại" -ForegroundColor Green
+    Write-Host "Restart skipped. You can restart manually later." -ForegroundColor Green
+    [System.Windows.MessageBox]::Show(
+        "You can restart your computer later when you're ready.",
+        "Information",
+        [System.Windows.MessageBoxButton]::OK,
+        [System.Windows.MessageBoxImage]::Information
+    ) | Out-Null
 }
