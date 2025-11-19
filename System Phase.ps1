@@ -1,74 +1,79 @@
-# ===================================================================
-# SCRIPT 1: System Phase - Cài đặt Updates với kiểm tra lặp lại
-# ===================================================================
-# Copy script này vào phần "System" scripts
+Write-Host "Starting Windows Update..." -ForegroundColor Green
 
-Write-Host "Bắt đầu cập nhật Windows..." -ForegroundColor Green
-
-# Tạo log file
 $LogPath = "C:\Windows\Temp\WindowsUpdate.log"
 Start-Transcript -Path $LogPath -Append
 
 try {
-    # Cài đặt PSWindowsUpdate module nếu chưa có
-    Write-Host "Kiểm tra PSWindowsUpdate module..." -ForegroundColor Yellow
+    Write-Host "Installing NuGet provider..." -ForegroundColor Yellow
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -ErrorAction SilentlyContinue | Out-Null
     
-    if (-not (Get-Module -ListAvailable -Name PSWindowsUpdate)) {
-        Write-Host "Cài đặt PSWindowsUpdate module..." -ForegroundColor Yellow
-        Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force
-        Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted
-        Install-Module -Name PSWindowsUpdate -Force -Confirm:$false
-    }
+    Write-Host "Configuring PSGallery..." -ForegroundColor Yellow
+    Set-PSRepository -Name 'PSGallery' -InstallationPolicy Trusted -ErrorAction SilentlyContinue
     
-    # Import module
-    Import-Module PSWindowsUpdate
+    Write-Host "Installing PSWindowsUpdate module..." -ForegroundColor Yellow
+    Install-Module -Name PSWindowsUpdate -Force -SkipPublisherCheck -Confirm:$false -ErrorAction Stop
     
-    # Bật Windows Update service
-    Write-Host "Bật Windows Update service..." -ForegroundColor Yellow
-    Set-Service -Name wuauserv -StartupType Manual
-    Start-Service -Name wuauserv
+    Write-Host "Importing PSWindowsUpdate module..." -ForegroundColor Yellow
+    Import-Module PSWindowsUpdate -Force
     
-    # Vòng lặp kiểm tra và cài đặt updates
+    Write-Host "Starting Windows Update service..." -ForegroundColor Yellow
+    Set-Service -Name wuauserv -StartupType Automatic -ErrorAction SilentlyContinue
+    Start-Service -Name wuauserv -ErrorAction SilentlyContinue
+    
     $MaxIterations = 3
     $Iteration = 0
+    $TotalUpdatesInstalled = 0
     
     do {
         $Iteration++
-        Write-Host "`n==================== Vòng lặp $Iteration/$MaxIterations ====================" -ForegroundColor Cyan
+        Write-Host "`n========== Iteration $Iteration/$MaxIterations ==========" -ForegroundColor Cyan
         
-        # Quét updates có sẵn
-        Write-Host "Đang quét updates..." -ForegroundColor Yellow
-        $Updates = Get-WindowsUpdate -AcceptAll -IgnoreReboot
+        Write-Host "Scanning for updates..." -ForegroundColor Yellow
+        $Updates = @(Get-WindowsUpdate -MicrosoftUpdate -AcceptAll -ErrorAction SilentlyContinue)
         
         if ($Updates.Count -eq 0) {
-            Write-Host "Không có updates nào cần cài đặt" -ForegroundColor Green
+            Write-Host "No updates found in this iteration" -ForegroundColor Green
             break
         }
         
-        Write-Host "Tìm thấy $($Updates.Count) updates. Đang cài đặt..." -ForegroundColor Yellow
+        Write-Host "Found $($Updates.Count) update(s). Installing..." -ForegroundColor Yellow
+        $TotalUpdatesInstalled += $Updates.Count
         
-        # Cài đặt updates
-        Get-WindowsUpdate -AcceptAll -Install -IgnoreReboot -Verbose
+        Get-WindowsUpdate -MicrosoftUpdate -AcceptAll -Install -IgnoreReboot -ErrorAction SilentlyContinue | Out-Null
         
-        Write-Host "Hoàn tất vòng lặp $Iteration" -ForegroundColor Green
-        Start-Sleep -Seconds 5
+        Write-Host "Completed iteration $Iteration" -ForegroundColor Green
+        
+        if ($Iteration -lt $MaxIterations) {
+            Write-Host "Waiting before next scan..." -ForegroundColor Yellow
+            Start-Sleep -Seconds 10
+        }
         
     } while ($Iteration -lt $MaxIterations)
     
-    # Kiểm tra xem có cần reboot không
-    $RebootRequired = (Get-WURebootStatus -Silent)
-    if ($RebootRequired) {
-        Write-Host "`nCần reboot để hoàn tất cập nhật" -ForegroundColor Yellow
-        Set-Content -Path "C:\Windows\Temp\RebootRequired.flag" -Value "1"
-    } else {
-        Write-Host "`nKhông cần reboot" -ForegroundColor Green
+    Write-Host "`n========================================" -ForegroundColor Cyan
+    Write-Host "Windows Update completed successfully!" -ForegroundColor Green
+    Write-Host "Total updates installed: $TotalUpdatesInstalled" -ForegroundColor Green
+    Write-Host "========================================`n" -ForegroundColor Cyan
+    
+    try {
+        if (-not (Get-Module -ListAvailable -Name BurntToast)) {
+            Install-Module -Name BurntToast -Force -SkipPublisherCheck -Confirm:$false -ErrorAction Stop
+        }
+        Import-Module BurntToast -Force
+        
+        New-BurntToastNotification -Text "Windows Update Completed", "Successfully installed $TotalUpdatesInstalled update(s)." -AppLogo "C:\Windows\System32\@WindowsUpdateToastIcon.png"
+        
+    } catch {
+        Write-Host "Could not display notification" -ForegroundColor Yellow
     }
     
-    Write-Host "`nHoàn tất toàn bộ quá trình cập nhật Windows!" -ForegroundColor Green
-    
 } catch {
-    Write-Host "Lỗi: $_" -ForegroundColor Red
+    Write-Host "`nError occurred:" -ForegroundColor Red
     Write-Host $_.Exception.Message -ForegroundColor Red
+    Write-Host $_.ScriptStackTrace -ForegroundColor Red
 } finally {
     Stop-Transcript
 }
+
+Start-Sleep -Seconds 5
